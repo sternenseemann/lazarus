@@ -422,6 +422,7 @@ public
     const namespace:string):boolean;
 
 
+  function RunAsForParameter(const param : string; var runAs : TRunAs) : Boolean;
 
   (* Spezielle Methoden *)
   {$IFDEF WINDOWS}
@@ -9920,6 +9921,8 @@ Var
  i : integer=0;
  force64, dummybool : boolean;
  winstparam : String='';
+ remaining : String='';
+ expr : String='';
  oldDisableWow64FsRedirectionStatus: pointer=nil;
  tempfilename : String='';
  runas : TRunAs;
@@ -10000,28 +10003,33 @@ begin
     force64 := false;
     runAs := traInvoker;
 
-    If (pos(lowercase('/64bit'),lowercase(winstparam)) > 0 ) and Is64BitSystem then
-       force64 := true;
+    remaining := winstparam;
 
-    If (pos(lowercase('/sysnative'),lowercase(winstparam)) > 0 ) and Is64BitSystem then
+    while remaining <> ''
+    do
+    begin
+      GetWord(remaining, expr, remaining, WordDelimiterWhiteSpace);
+      LogDatei.log(expr, 7);
+
+      If (lowercase(Parameter_64bit) = lowercase(expr)) and Is64BitSystem then
          force64 := true;
 
-    If (pos(lowercase('/32bit'),lowercase(winstparam)) > 0 ) then
-         force64 := false;
+      If (lowercase(Parameter_SysNative) = lowercase(expr)) and Is64BitSystem then
+           force64 := true;
 
-    If (pos(lowercase('/showoutput'),lowercase(winstparam)) > 0 ) then
-    begin
-         showoutput := true;
-         LogDatei.log('Set Showoutput true', LLDebug3);
+      If lowercase(Parameter_32Bit) = lowercase(expr) then
+           force64 := false;
+
+      If lowercase('/showoutput') = lowercase(expr) then
+      begin
+           showoutput := true;
+           LogDatei.log('Set Showoutput true', LLDebug);
+      end;
+
+      {$IFDEF WIN32}
+      RunAsForParameter(expr, runAs);
+      {$ENDIF WIN32}
     end;
-
-    If (pos(lowercase(ParameterRunAsLoggedOnUser),lowercase(winstparam)) > 0 ) then
-    Begin
-      if runLoginScripts then
-        runAs := traLoggedOnUser
-      else
-        LogDatei.log('Warning: Not in UserLoginScript mode: /RunAsLoggedinUser ignored', LLWarning);
-    End;
 
     {$IFDEF WIN32}
     if force64 then
@@ -10695,12 +10703,9 @@ begin
   end;
 end;
 
-function TuibInstScript.produceStringList
-   (const section: TuibIniScript;
-   const s0 : String;
-   var Remaining: String;
-   var list : TXStringList;
-   var InfoSyntaxError : String ) : Boolean;
+function TuibInstScript.produceStringList(const section: TuibIniScript;
+  const s0: String; var Remaining: String; var list: TXStringlist;
+  var InfoSyntaxError: String): Boolean;
 //var
 // NestLevel : integer;
 begin
@@ -18613,6 +18618,43 @@ end
  list1.Free;
 
 End;
+
+function TuibInstScript.RunAsForParameter(const param : string; var runAs : TRunAs) : Boolean;
+var
+ trimmed : string;
+begin
+  trimmed := lowercase(trim(param));
+  Result := true;
+
+  if trimmed = LowerCase(ParameterRunAsAdmin) then
+    runAs := traAdmin
+  else if trimmed = LowerCase(ParameterRunAsAdmin1) then
+    runAs := traAdmin
+  else if trimmed = LowerCase(ParameterRunAsAdmin2) then
+    runAs := traAdminProfile
+  else if trimmed = LowerCase(ParameterRunAsAdmin3) then
+    runAs := traAdminProfileImpersonate
+  else if trimmed = LowerCase(ParameterRunAsAdmin4) then
+    runAs := traAdminProfileImpersonateExplorer
+  else if trimmed = LowerCase(ParameterRunAsInvoker) then
+    runAs := traInvoker
+  else if trimmed = LowerCase(ParameterRunElevated) then
+  begin
+    {$IFDEF WIN32}
+    opsiSetupAdmin_runElevated := true;
+    {$ENDIF WIN32}
+     runAs := traInvoker;
+  end
+  else if trimmed = LowerCase(ParameterRunAsLoggedOnUser) then
+  Begin
+   if runLoginScripts then
+     runAs := traLoggedOnUser
+   else
+     LogDatei.log('Warning: Not in UserLoginScript mode: /RunAsLoggedinUser ignored', LLWarning)
+  End
+  else
+    Result := false;
+end;
 
 function TuibInstScript.doSetVar (const section: TuibIniScript; const Expressionstr : String;
                    var Remaining : String; var InfoSyntaxError : String) : Boolean;
