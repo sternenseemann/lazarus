@@ -92,6 +92,7 @@ uses
 const
   BytesarrayLength = 5000;
   PATHSEPARATOR = PathDelim;
+  READ_BYTES = 4096;
 //KEY_WOW64_64KEY = $0100;
 //KEY_WOW64_32KEY = $0200;
 
@@ -119,7 +120,6 @@ type
   TRunAs = (traPcpatch, traInvoker, traAdmin, traAdminProfile, traAdminProfileExplorer,
     traAdminProfileImpersonate, traAdminProfileImpersonateExplorer, traLoggedOnUser);
 {$ENDIF}
-
 
 
   TXStringList = class(TStringList)
@@ -1392,6 +1392,8 @@ end;
 {$ENDIF WINDOWS}
 
 
+
+
 {$IFDEF WINDOWS}
 function StartProcess_se(CmdLinePasStr: string; ShowWindowFlag: integer;
   WaitForReturn: boolean; WaitForWindowVanished: boolean;
@@ -2122,56 +2124,42 @@ function StartProcess_cp(CmdLinePasStr: string; ShowWindowFlag: integer;
   WaitForReturn: boolean; WaitForWindowVanished: boolean;
   WaitForWindowAppearing: boolean; WaitForProcessEnding: boolean;
   waitsecsAsTimeout: boolean; Ident: string; WaitSecs: word;
-  var Report: string; var ExitCode: longint): boolean;
+  var Report: string; var output: TXStringList; var ExitCode: longint): boolean;
 
 var
-  //myStringlist : TStringlist;
-  //S: TStringList;
-  //M: TMemoryStream;
+  // process and output capturing
+  ProcessStream: TMemoryStream;
   FpcProcess: TProcess;
-  //n: longint;
-  BytesRead: longint;
-  WaitWindowStarted: boolean;
+  BytesRead: LongInt;
+  n: LongInt;
+  // wait conditions
+  running: boolean;
   desiredProcessStarted: boolean;
   WaitForProcessEndingLogflag: boolean;
   starttime, nowtime: TDateTime;
-
+  WaitWindowStarted: boolean;
+  // cmd line parsing
   line: string;
   filename: string;
   ParamStr: string;
   paramlist: TXStringlist;
-  //dir: string;
   firstsplit: integer;
-  //len: DWord;
-  //functionresult: hinst;
-
-  resultfilename: string;
-  presultfilename: PChar;
-  running: boolean;
-  processID: Dword;
+  // process info / settings
+  ProcShowWindowFlag: TShowWindowOptions;
+  processID: DWord;
   parentProcessID: DWord;
   info: string;
-  lpExitCode: DWORD = 0;
-  //  var ProcessInfo: jwawinbase.TProcessInformation;
-  mypid: dword = 0;
-  ProcShowWindowFlag: TShowWindowOptions;
-  (*
-  starcounter : integer;
-  cpu100stars : string;
-  {$IFDEF WIN32}
-  processActivityCounter: PCPUUsageData;
-  {$ENDIF WIN32}
-  *)
-
+  lpExitCode: DWord;
+  // tmp variables
+  i: integer;
 const
   secsPerDay = 86400;
-  //ReadBufferSize = 2048;
 
 begin
   ParamStr := '';
-  paramlist := TXStringlist.Create;
+  paramList := TXStringlist.create;
 
-  // do we have a quoted file name ?
+  // Quoted File Name?
   if CmdLinePasStr[1] = '"' then
   begin
     line := copy(CmdLinePasStr, 2, length(CmdLinePasStr));
@@ -2202,25 +2190,27 @@ begin
   end;
 
   stringsplitByWhiteSpace(ParamStr, TStringList(paramlist));
-  //writeln('>->->'+filename+'='+ExpandFileName(filename));
-  //writeln('>->->'+paramstr);
-  //writeln('>->->'+CmdLinePasStr);
+
   try
     try
-      ///M := TMemoryStream.Create;
+    begin
+      ProcessStream := TMemoryStream.Create;
       BytesRead := 0;
+
       FpcProcess := process.TProcess.Create(nil);
       {$IFDEF WINDOWS}
-      FpcProcess.CommandLine := utf8towincp(CmdLinePasStr);
+      for i := 0 to (paramList.count - 1) do
+      begin
+        paramList[i] := utf8towincp(paramList[i]);
+      end;
+      FpcProcess.Executable := utf8towincp(filename);
       {$ELSE WINDOWS}
-      FpcProcess.CommandLine := CmdLinePasStr;
+      FpcProcess.Executable := filename;
       {$ENDIF WINDOWS}
-      //FpcProcess.Executable := filename;
-      //FpcProcess.Parameters := paramlist;
+      FpcProcess.Parameters := paramList;
       FpcProcess.StartupOptions := [suoUseShowWindow, suoUseSize, suoUsePosition];
-      //FpcProcess.CommandLine := 'cmd.exe /c dir';
-      //if WaitForReturn then
-      //  FpcProcess.Options := FpcProcess.Options + [poWaitOnExit];
+      FpcProcess.Options := FpcProcess.Options + [poUsePipes, poStdErrToOutPut];
+
       case ShowWindowFlag of
         SW_HIDE: ProcShowWindowFlag := swoHIDE;
         SW_MINIMIZE: ProcShowWindowFlag := swoMinimize;
@@ -2228,296 +2218,228 @@ begin
         SW_NORMAL: ProcShowWindowFlag := swoShowNormal;   // swoNone ?
         SW_RESTORE: ProcShowWindowFlag := swoRestore;
         SW_SHOW: ProcShowWindowFlag := swoShow;
-        //SW_SHOWMAXIMIZED : ProcShowWindowFlag := swoShowMaximized;
         SW_SHOWMINIMIZED: ProcShowWindowFlag := swoShowMinimized;
         SW_SHOWMINNOACTIVE: ProcShowWindowFlag := swoshowMinNOActive;
         SW_SHOWNA: ProcShowWindowFlag := swoShowNA;
         SW_SHOWNOACTIVATE: ProcShowWindowFlag := swoShowNoActivate;
-          //SW_SHOWNORMAL : ProcShowWindowFlag := swoShowNormal;
-        else
-          ProcShowWindowFlag := swoShow;
+        //SW_SHOWNORMAL : ProcShowWindowFlag := swoShowNormal;
+        //SW_SHOWMAXIMIZED : ProcShowWindowFlag := swoShowMaximized;
+      else
+        ProcShowWindowFlag := swoShow;
       end;
       FpcProcess.ShowWindow := ProcShowWindowFlag;
       FpcProcess.Execute;
-      //FillChar(processInfo, SizeOf(processInfo), 0);
-      //CreateProcessElevated(lpApplicationName: PChar; lpCommandLine: String;
-      //lpCurrentDirectory: PChar;Counter: Integer; var ProcessInfo: TProcessInformation): Boolean;
-      //if not CreateProcessElevated(nil, CmdLinePasStr, PChar(GetCurrentDir),0, ProcessInfo) then
-      //begin
-      //  result := false;
-      //  logdatei.DependentAdd('Could not start process ', LLError);
-      //end
-      //else
-      begin
-        Result := True;
 
-        desiredProcessStarted := False;
-        WaitForProcessEndingLogflag := True;
-        setLength(resultfilename, 400);
-        presultfilename := PChar(resultfilename);
-        //mypid := FpcProcess.ProcessID;
+      Result := True;
+      desiredProcessStarted := False;
+      WaitForProcessEndingLogflag := True;
 
-        //FindExecutable(PChar(filename), nil, presultfilename);
-        //FindFirstTask ( ExtractFilename(presultfilename), processID, parentProcessID, info);
-        //allChildrenIDs := TStringList.create;
-        //allChildrenIDs.add ( inttoStr(processID));
+      // setLength(resultfilename, 400);
+      // presultfilename := PChar(resultfilename);
 
-        if not WaitForReturn and (WaitSecs = 0) then
+      if not WaitForReturn and (WaitSecs = 0) then
           Report := 'Process started:    ' + CmdLinePasStr
-        else
+      else
+      begin
+        running := True;
+        starttime := now;
+        WaitWindowStarted := False;
+        {$IFDEF GUI}
+        if waitsecsAsTimeout and (WaitSecs > 5) then
         begin
-          running := True;
-          starttime := now;
-          WaitWindowStarted := False;
-          {$IFDEF GUI}
-          if waitsecsAsTimeout and (WaitSecs > 5) then
+          FBatchOberflaeche.showProgressBar(True);
+          FBatchOberflaeche.setProgress(0);
+        end;
+        //for starcounter := 1 to 110 do cpu100stars := cpu100stars+ '*';
+        {$ENDIF GUI}
+
+        while running do
+        begin
+          nowtime := now;
+          running := False;
+
+          ProcessStream.SetSize(BytesRead + READ_BYTES);
+          n := FPCProcess.Output.Read((ProcessStream.Memory + BytesRead)^, READ_BYTES);
+          if n > 0 then
+            Inc(BytesRead, n);
+
+          {$IFDEF WINDOWS}
+          if WaitForWindowAppearing then
           begin
-            FBatchOberflaeche.showProgressBar(True);
-            FBatchOberflaeche.setProgress(0);
-          end;
-          //for starcounter := 1 to 110 do cpu100stars := cpu100stars+ '*';
-          {$ENDIF GUI}
-
-          while running do
-          begin
-            nowtime := now;
-
-            running := False;
-
-            //wait for task vanished
-            {$IFDEF WINDOWS}
-            if WaitForWindowAppearing then
-            begin
-              //waiting condition 0:
-              //wait until a window is appearing
-              if FindWindowEx(0, 0, nil, PChar(Ident)) = 0 then
-                running := True;
-            end
-
-            else if WaitForWindowVanished and not WaitWindowStarted then
-            begin
-              //waiting condition 1:
-              //we are waiting for a window that will later vanish
-              //but this window did not appear yet
-              if FindWindowEx(0, 0, nil, PChar(Ident)) <> 0 then
-                WaitWindowStarted := True;
-
-              if not WaitWindowStarted or WaitForWindowVanished then
-                running := True;
-              // in case WaitForWindowVanished we are not yet ready
-              // but have to check waiting condition 3
-            end
-
-            else
-{$ENDIF WINDOWS}
-            if not waitsecsAsTimeout and (WaitSecs > 0) and
-              ((nowtime - starttime) < waitSecs / secsPerDay) then
-            begin
-              // waiting condition 2 : we shall observe a waiting time
-              // and it has not finished
+            if FindWindowEx(0, 0, nil, PChar(Ident)) = 0 then
               running := True;
-            end
+          end
+          else if WaitForWindowVanished and not WaitWindowStarted then
+          begin
+            //waiting condition 1:
+            //we are waiting for a window that will later vanish
+            //but this window did not appear yet
+            if FindWindowEx(0, 0, nil, PChar(Ident)) <> 0 then
+              WaitWindowStarted := True;
 
-            else
-{$IFDEF WINDOWS}
-            if WaitForProcessEnding and not desiredProcessStarted then
+            if not WaitWindowStarted or WaitForWindowVanished then
+              running := True;
+            // in case WaitForWindowVanished we are not yet ready
+            // but have to check waiting condition 3
+          end
+          else
+          {$ENDIF WINDOWS}
+          if not waitsecsAsTimeout and (WaitSecs > 0) and
+             ((nowtime - starttime) < (waitSecs / secsPerday)) then
+          begin
+            // waiting condition 2: we shall observe a waiting time
+            // and it has not finished
+            running := True;
+          end
+          else
+          {$IFDEF WINDOWS}
+          if WaitForProcessEnding and not desiredProcessStarted then
+          begin
+            //waiting condition 3a : we wait that some other process will come into existence
+            if WaitForProcessEndingLogflag then
             begin
-              //waiting condition 3a : we wait that some other process will come into existence
-              if WaitForProcessEndingLogflag then
-              begin
-                logdatei.DependentAdd('Waiting for start of "' +
-                  ident + '"', LevelComplete);
-                WaitForProcessEndingLogflag := False;
-              end;
+              logdatei.DependentAdd('Waiting for start of "' +
+                ident + '"', LevelComplete);
+              WaitForProcessEndingLogflag := False;
 
-              desiredProcessStarted :=
-                FindFirstTask(PChar(Ident), processID, parentProcessID, info);
+              desiredProcessStarted := FindFirstTask(PChar(Ident), processID, parentProcessID, info);
 
               if WaitSecs = 0 then
                 running := True
               else
-              begin //time out given
-                if ((nowtime - starttime) < waitSecs / secsPerDay) then
-                begin
-                  running := True;
-                  (*
-                  {$IFDEF GUI}
-                  if waitsecsAsTimeout and (WaitSecs > 10) then
-                    FBatchOberflaeche.setProgress(round((waitSecs / secsPerDay)/ (nowtime - starttime) * 100));
-                  {$ENDIF GUI}
-                  *)
-                end
+              begin // time out given
+                if ((nowtime - starttime) < (waitSecs / secsPerDay)) then
+                  running := True
                 else
-                begin
                   logdatei.DependentAdd('Waiting for "' + ident +
                     '" stopped - time out ' + IntToStr(waitSecs) + ' sec', LLInfo);
-                end;
               end;
-
-            end
-
-            else if WaitForProcessEnding and desiredProcessStarted then
-            begin
-              //waiting condition 3b : now we continue waiting until the observed other process will stop
-              running :=
-                FindFirstTask(PChar(Ident), processID, parentProcessID, info);
-
-              if not WaitForProcessEndingLogflag and running then
-              begin
-                logdatei.DependentAdd('Waiting for process "' +
-                  ident + '" ending', LevelComplete);
-                WaitForProcessEndingLogflag := True;
-              end;
-
-              if not running then
-              begin
-                logdatei.DependentAdd('Process "' + ident + '" ended', LevelComplete);
-                // After the process we waited for has ended, the Parent may be still alive
-                // in this case we have to wait for the end of the parent
-                {$IFDEF WINDOWS}
-                if GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode) and
-                  (lpExitCode = still_active) then
-                {$ENDIF WINDOWS}
-                {$IFDEF UNIX}
-                  if FpcProcess.Running then
-                {$ENDIF LINUX}
-                  begin
-                    running := True;
-                    WaitForProcessEnding := False;
-                  end;
-              end;
-              if running then
-              begin
-
-                if (waitSecs > 0) // we look for time out
-                  and  //time out occured
-                  ((nowtime - starttime) >= waitSecs / secsPerDay) then
-                begin
-                  running := False;
-                  logdatei.log('Error: Timeout: Waiting for ending of "' +
-                    ident + '" stopped - waitSecs out ' + IntToStr(waitSecs) +
-                    ' sec', LLError);
-                end;
-
-              end;
-
-            end
-
-            //else if not FpcProcess.Running
-            //else if GetExitCodeProcess(processInfo.hProcess, lpExitCode) and (lpExitCode <> still_active)
-            //else if FpcProcess.ExitStatus  <> still_active
-            else if GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode) and
-              (lpExitCode <> still_active) then
-{$ENDIF WINDOWS}
-            {$IFDEF UNIX}
-              if not FpcProcess.Running then
-            {$ENDIF LINUX}
-              begin
-                // waiting condition 4 :  Process has finished;
-                //   we still have to look if WindowToVanish did vanish if this is necessary
-                logdatei.DependentAdd(
-                  'Process terminated at: ' + DateTimeToStr(now) +
-                  ' exitcode is: ' + IntToStr(lpExitCode), LLDebug2);
- (*
-            end
-            else if GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode) and (lpExitCode <> still_active)
-            then
-            begin
-              logdatei.DependentAdd('Process terminated at: ' +
-                DateTimeToStr(now) + ' exitcode is: ' + IntToStr(lpExitCode), LLDebug2);
-*)
-              {$IFDEF WINDOWS}
-                if WaitForWindowVanished then
-                begin
-                  if not (FindWindowEx(0, 0, nil, PChar(Ident)) = 0) then
-                  begin
-                    running := True;
-                  end;
-                end;
-              {$ENDIF WINDOWS}
-
-              end
-
-              else if waitForReturn then
-              begin
-                //waiting condition 4 : Process is still active
-                if waitsecsAsTimeout and (waitSecs >
-                  0) // we look for time out
-                  and  //time out occured
-                  ((nowtime - starttime) >= waitSecs / secsPerDay) then
-                begin
-                  running := False;
-                  logdatei.log('Error: Timeout: Waited for the end of started process"' +
-                    ' - but time out reached after ' + IntToStr(waitSecs) +
-                    ' sec.', LLError);
-                end
-                else
-                begin
-                  running := True;
-                  (*
-                  {$IFDEF GUI}
-                  if waitsecsAsTimeout and (WaitSecs > 10) then
-                    FBatchOberflaeche.setProgress(round((waitSecs / secsPerDay)/ (nowtime - starttime) * 100));
-                  {$ENDIF GUI}
-                  *)
-                end;
-              end;
-
-            if running then
-            begin
-              (*
-              {$IFDEF WIN32}
-              processActivityCounter := nil;
-              processActivityCounter:=wsCreateUsageCounter(FpcProcess.ProcessID);
-              {$ENDIF WIN32}
-              *)
-              ProcessMess;
-              //sleep(50);
-              sleep(1000);
-              {$IFDEF UNIX}
-              lpExitCode := FpcProcess.ExitStatus;
-              {$ENDIF LINUX}
-              {$IFDEF WINDOWS}
-              GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode);
-              {$ENDIF WINDOWS}
-              //GetExitCodeProcess(ProcessInfo.hProcess, lpExitCode);
-              {$IFDEF GUI}
-              if waitsecsAsTimeout and (WaitSecs > 5) then
-              begin
-                FBatchOberflaeche.setProgress(round(
-                  ((nowtime - starttime) / (waitSecs / secsPerDay)) * 100));
-              end;
-              (*
-              {$IFDEF WIN32}
-              if processActivityCounter <> nil then
-              begin
-                logdatei.log('Process CPU Activity: '+inttostr(round(wsGetCpuUsage(processActivityCounter)))+' -> '+ copy(cpu100stars, 1, round(wsGetCpuUsage(processActivityCounter))),LLDebug2);
-                FBatchOberflaeche.setCPUActivityLabel(copy(cpu100stars, 1, 1+round(wsGetCpuUsage(processActivityCounter))));
-              end;
-              {$ENDIF WIN32}
-              *)
-              {$ENDIF GUI}
-              ProcessMess;
-              logdatei.DependentAdd('Waiting for ending at ' +
-                DateTimeToStr(now) + ' exitcode is: ' + IntToStr(lpExitCode), LLDebug2);
-              ProcessMess;
             end;
+          end
+          else if WaitForProcessEnding and desiredProcessStarted then
+          begin
+            //waiting condition 3b : now we continue waiting until the observed other process will stop
+            running :=
+              FindFirstTask(PChar(Ident), processID, parentProcessID, info);
+
+            if not WaitForProcessEndingLogflag and running then
+            begin
+              logdatei.DependentAdd('Waiting for process "' +
+                  ident + '" ending', LevelComplete);
+              WaitForProcessEndingLogflag := True;
+            end;
+
+            if not running then
+            begin
+              logdatei.DependentAdd('Process "' + ident + '" ended', LevelComplete);
+              // After the process we waited for has ended, the Parent may be still alive
+              // in this case we have to wait for the end of the parent
+              if GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode) and
+                (lpExitCode = still_active) then
+              // for UNIX (commented out since inside IFDEF WINDOWS
+              // if FpcProcess.Running then
+              begin
+                running := True;
+                WaitForProcessEnding := False;
+              end;
+            end
+            else
+            begin
+              if (waitSecs > 0) // we look for time out
+                 and  //time out occured
+                 ((nowtime - starttime) >= waitSecs / secsPerDay) then
+              begin
+                running := False;
+                logdatei.log('Error: Timeout: Waiting for ending of "' +
+                  ident + '" stopped - waitSecs out ' + IntToStr(waitSecs) +
+                  ' sec', LLError);
+              end;
+            end;
+          end
+          else if GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode) and
+            (lpExitCode <> still_active) then
+          {$ENDIF WINDOWS}
+          {$IFDEF UNIX}
+          if not FpcProcess.Running then
+          {$ENDIF UNIX}
+          begin
+            // waiting condition 4 : Process has finished;
+            // we still have to look if WindowToVanish did vanish if this is necessary
+            logdatei.DependentAdd(
+              'Process terminated at: ' + DateTimeToStr(now) +
+              ' exitcode is: ' + IntToStr(lpExitCode), LLDebug2);
+            {$IFDEF WINDOWS}
+            if WaitForWindowVanished then
+            begin
+              if not (FindWindowEx(0, 0, nil, PChar(Ident)) = 0) then
+              begin
+                running := True;
+              end;
+            end;
+            {$ENDIF WINDOWS}
+          end
+          else if waitForReturn then
+          begin
+            // waiting condition 4 : Process is still active
+            if waitsecsAsTimeout and (waitSecs > 0) // we look for time out
+               and ((nowtime - starttime) >= (waitSecs / secsPerDay)) then // timeout passed
+            begin
+              running := False;
+              LogDatei.log('Error: Timeout: Waited for the end of started process"' +
+                ' - but time out reached after ' + IntToStr(waitSecs) +
+                ' sec.', LLError);
+            end
+            else
+              running := True;
           end;
 
-          ProcessMess;
-
-          //exitCode := FpcProcess.ExitStatus;
-          exitCode := FpcProcess.ExitCode;
-          //GetExitCodeProcess(ProcessInfo.hProcess, lpExitCode);
-          //GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode);
-          //exitCode := lpExitCode;
-          //Report := 'Process executed  + CmdLinePasStr
-          Report := 'ExitCode ' + IntToStr(exitCode) + '    Executed process "' +
-            CmdLinePasStr + '"';
+          if running then
+          begin
+            ProcessMess;
+            sleep(1000);
+            {$IFDEF UNIX}
+            lpExitCode := FpcProcess.ExitStatus
+            {$ENDIF UNIX}
+            {$IFDEF WINDOWS}
+            GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode);
+            {$ENDIF WINDOWS}
+            {$IFDEF GUI}
+            if waitsecsAsTimeout and (WaitSecs > 5) then
+            begin
+              FBatchOberflaeche.setProgress(round(
+                ((nowtime - starttime) / (waitSecs / secsPerDay)) * 100));
+            end;
+            {$ENDIF GUI}
+            ProcessMess;
+            logdatei.DependentAdd('Waiting for ending at ' +
+                DateTimeToStr(now) + ' exitcode is: ' + IntToStr(lpExitCode), LLDebug2);
+            ProcessMess;
+          end;
         end;
 
-      end;
+        // read remaining output
+        repeat
+          ProcessStream.SetSize(BytesRead + READ_BYTES);
+          n := FPCProcess.Output.Read((ProcessStream.Memory + BytesRead)^, READ_BYTES);
+          if n > 0 then
+            Inc(BytesRead, n);
+        until n <= 0;
 
+        ProcessStream.SetSize(BytesRead);
+        output.LoadFromStream(ProcessStream);
+
+        ProcessMess;
+
+        {$IFDEF WINDOWS}
+        for i := 0 to (output.Count - 1) do
+          output.strings[i] := WinCPToUTF8(output.strings[i]);
+        {$ENDIF WINDOWS}
+
+        exitCode := FpcProcess.ExitCode;
+        Report := 'ExitCode ' + IntToStr(exitCode) + '    Executed process "' +
+          CmdLinePasStr + '"';
+      end;
+    end
     except
       on e: Exception do
       begin
@@ -2527,20 +2449,10 @@ begin
       end;
     end;
   finally
-    //CloseHandle(ProcessInfo.hProcess);
-    //CloseHandle(processInfo.hThread);
-    ///S.Free;
     FpcProcess.Free;
-    ///M.Free;
+    ProcessStream.Free;
     {$IFDEF GUI}
     FBatchOberflaeche.showProgressBar(False);
-    (*
-    {$IFDEF WIN32}
-    if processActivityCounter <> nil then wsDestroyUsageCounter(processActivityCounter);
-    processActivityCounter := nil;
-    FBatchOberflaeche.setCPUActivityLabel('');
-    {$ENDIF WIN32}
-    *)
     {$ENDIF GUI}
   end;
 end;
@@ -3866,6 +3778,9 @@ var
   //WaitForProcessEndingLogflag: boolean;
   //starttime, nowtime: TDateTime;
 
+  output: TXStringList;
+  i: LongInt;
+
   line: string = '';
   filename: string = '';
   params: string = '';
@@ -3897,6 +3812,7 @@ const
 
 begin
   params := '';
+  output := TXStringList.create;
 
   if CmdLinePasStr[1] = '"' then
   begin
@@ -3932,7 +3848,7 @@ begin
     'Start process as invoker: ' + getCommandResult('/bin/bash -c whoami'), LLInfo);
   Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag, WaitForReturn,
     WaitForWindowVanished, WaitForWindowAppearing, WaitForProcessEnding,
-    waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode);
+    waitsecsAsTimeout, Ident, WaitSecs, Report, output, ExitCode);
   {$ENDIF LINUX}
   {$IFDEF WIN32}
   ext := ExtractFileExt(filename);
@@ -3971,8 +3887,7 @@ begin
         'Start process as invoker: ' + DSiGetUserName, LLInfo);
       Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag,
         WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
-        WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode);
-
+        WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs, Report, output, ExitCode);
     end
     else if RunAs = traLoggedOnUser then
     begin
@@ -4066,7 +3981,7 @@ begin
             Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag,
               WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
               WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs,
-              Report, ExitCode);
+              Report, output, ExitCode);
           end
           else
           begin
@@ -4094,6 +4009,16 @@ begin
     end;
   end;
   {$ENDIF WIN32}
+  if WaitForReturn and (output.count > 0) then
+  begin
+    LogDatei.log('--- Process Output ---', LLDebug);
+    for i := 0 to output.count-1 do
+    begin
+      LogDatei.log (output.strings[i], LLDebug);
+    end;
+    LogDatei.log('----------------------', LLDebug);
+  end;
+  output.Free;
 end;
 
 
