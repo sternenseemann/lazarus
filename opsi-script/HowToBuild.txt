@@ -1,22 +1,23 @@
 opsi-winst / opsi-script build howto
 
 20.09.2018 detlef oertel
+08.10.2019 updated
 
 The opsi-winst / opsi-script has to be compiled by Lazarus/Freepascal
 
 Checkout the complete lazarus repository from git.
 
-You need a plain Lazarus 1.8.4 like:
-http://download.uib.de/opsi4.0/products/contribute/full-package/lazarus_1.8.4-1.opsi
-
-For Standard opsi-winst / opsi-script for Windows use the 32 Bit Version.
+For Standard opsi-winst / opsi-script on Windows, use
+Lazarus 2.0.4 32-Bit Version (and the x86_64 crosscompiler) from
+https://sourceforge.net/projects/lazarus/files/Lazarus%20Windows%2032%20bits/Lazarus%202.0.4/
+(lazarus-2.0.4-fpc-3.0.4-win32.exe  +  lazarus-2.0.4-fpc-3.0.4-cross-x86_64-win64-win32.exe)
 
 The project files are lazarus/opsi-script/*.lpi
 
-project file for Windows is winst.lpi     (not (!) winst64.lpi
-project files under Linux are
-opsiscript.lpi
-opsiscriptnogui.lpi
-which may be compiled with 32bit or 64 bit
+* project file for Windows is winst.lpi     (not (!) winst64.lpi
+* project files under Linux are
+  * opsiscript.lpi
+  * opsiscriptnogui.lpi
+  ... which may be compiled with 32bit or 64 bit Lazrus
 
 
