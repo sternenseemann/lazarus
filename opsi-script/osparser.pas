@@ -9930,6 +9930,7 @@ Var
  showoutput : boolean = false;
  remainingstr, evaluatedstr, newbatchparastr, errorstr : string;
  aktos : TuibOSVersion;
+ warnOnlyWindows : Boolean;
 
 begin
  try
@@ -10001,8 +10002,12 @@ begin
       winstparam := trim(copy(BatchParameter,pos('winst ', lowercase(BatchParameter))+5,length(BatchParameter)));
       BatchParameter := trim(copy(BatchParameter,0,pos('winst ', lowercase(BatchParameter))-1));
     end;
+    warnOnlyWindows := false;
     force64 := false;
     runAs := traInvoker;
+    {$IFDEF WIN32}
+    opsiSetupAdmin_runElevated := false;
+    {$ENDIF WIN32}
 
     remaining := winstparam;
 
@@ -10010,16 +10015,24 @@ begin
     do
     begin
       GetWord(remaining, expr, remaining, WordDelimiterWhiteSpace);
-      LogDatei.log(expr, 7);
 
       If (lowercase(Parameter_64bit) = lowercase(expr)) and Is64BitSystem then
-         force64 := true;
+      begin
+           force64 := true;
+           warnOnlyWindows := true;
+      end;
 
       If (lowercase(Parameter_SysNative) = lowercase(expr)) and Is64BitSystem then
-           force64 := true;
+      begin
+        force64 := true;
+        warnOnlyWindows := true;
+      end;
 
       If lowercase(Parameter_32Bit) = lowercase(expr) then
-           force64 := false;
+      begin
+        force64 := false;
+        warnOnlyWindows := true;
+      end;
 
       If lowercase('/showoutput') = lowercase(expr) then
       begin
@@ -10027,9 +10040,14 @@ begin
            LogDatei.log('Set Showoutput true', LLDebug);
       end;
 
-      {$IFDEF WIN32}
-      RunAsForParameter(expr, runAs);
+      if RunAsForParameter(expr, runAs) then
+         warnOnlyWindows := true;
+
+      {$IFNDEF WIN32}
+      if warnOnlyWindows then
+         LogDatei.log('Warning: ' + expr + ' is only supported on Windows!', LLWarning);
       {$ENDIF WIN32}
+      warnOnlyWindows := false;
     end;
 
     {$IFDEF WIN32}
@@ -10222,7 +10240,7 @@ Var
  WaitConditions : TSetWaitConditions;
  SyntaxCheck : Boolean;
  InfoSyntaxError : String='';
- warnLinux : Boolean;
+ warnOnlyWindows : Boolean;
 begin
   runAs := traInvoker;
   {$IFDEF WIN32}
@@ -10232,7 +10250,7 @@ begin
   flag_force64 := false;
   GetWord (Remaining, expr, Remaining, WordDelimiterSet0);
   SyntaxCheck := true;
-  warnLinux := false;
+  warnOnlyWindows := false;
 
   ident := '';
   WaitConditions := [ttpWaitOnTerminate];
@@ -10244,25 +10262,25 @@ begin
    then
    Begin
      flag_force64 := true;
-     warnLinux := true;
+     warnOnlyWindows := true;
    End
    else if LowerCase (expr) = LowerCase (Parameter_32Bit)
    then
    Begin
      flag_force64 := false;
-     warnLinux := true;
+     warnOnlyWindows := true;
    End
    else if (LowerCase (expr) = LowerCase (Parameter_SysNative)) and Is64BitSystem
    then
    Begin
      flag_force64 := true;
-     warnLinux := true;
+     warnOnlyWindows := true;
    End
    else if (LowerCase (expr) = LowerCase (Parameter_SysNative)) and (not Is64BitSystem)
    then
    Begin
      flag_force64 := false;
-     warnLinux := true;
+     warnOnlyWindows := true;
    End
    else if LowerCase (expr) = LowerCase (ParameterWaitSecs)
    then
@@ -10284,7 +10302,7 @@ begin
    else if LowerCase (expr) = LowerCase (ParameterCloseOnWindow)
    then
    Begin
-     warnLinux := true;
+     warnOnlyWindows := true;
      runAs := traInvoker;
      WaitConditions := WaitConditions + [ttpWaitForWindowAppearing];
      if EvaluateString (Remaining, Remaining, ident, InfoSyntaxError)
@@ -10302,7 +10320,7 @@ begin
    else if LowerCase (expr) = LowerCase (ParameterCloseBehindWindow)
    then
    Begin
-     warnLinux := true;
+     warnOnlyWindows := true;
      runAs := traInvoker;
      WaitConditions := WaitConditions + [ttpWaitForWindowVanished];
 
@@ -10366,7 +10384,7 @@ begin
      WaitConditions := WaitConditions + [ttpWaitOnTerminate];
    End
    else if RunAsForParameter(expr, runAs) then
-     warnLinux := true
+     warnOnlyWindows := true
    else
    Begin
      SyntaxCheck := false;
@@ -10374,12 +10392,12 @@ begin
    End;
 
    {$IFNDEF WIN32}
-   if warnLinux then
+   if warnOnlyWindows then
    Begin
-     Logdatei.log(expr + ' is only supported on Windows', LLWarning);
+     Logdatei.log('Warning: ' + expr + ' is only supported on Windows!', LLWarning);
    End;
    {$ENDIF WIN32}
-   warnLinux := false;
+   warnOnlyWindows := false;
 
    GetWord (Remaining, expr, Remaining, WordDelimiterSet0);
    end;
@@ -19026,7 +19044,6 @@ function TuibInstScript.doAktionen (Sektion: TWorkSection; const CallingSektion:
   ErrorInfo : String='';
   InfoSyntaxError : String='';
   SyntaxCheck : Boolean;
-  WarnLinux : Boolean;
   sign : Integer=0;
   evaluated : Boolean;
   FName : String='';
