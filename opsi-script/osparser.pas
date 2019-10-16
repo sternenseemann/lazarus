@@ -9931,6 +9931,8 @@ Var
  remainingstr, evaluatedstr, newbatchparastr, errorstr : string;
  aktos : TuibOSVersion;
  warnOnlyWindows : Boolean;
+ SyntaxCheck : Boolean;
+ InfoSyntaxError : String='';
 
 begin
  try
@@ -10003,6 +10005,7 @@ begin
       BatchParameter := trim(copy(BatchParameter,0,pos('winst ', lowercase(BatchParameter))-1));
     end;
     warnOnlyWindows := false;
+    SyntaxCheck := true;
     force64 := false;
     runAs := traInvoker;
     {$IFDEF WIN32}
@@ -10011,7 +10014,7 @@ begin
 
     remaining := winstparam;
 
-    while remaining <> ''
+    while (remaining <> '') and SyntaxCheck
     do
     begin
       GetWord(remaining, expr, remaining, WordDelimiterWhiteSpace);
@@ -10020,34 +10023,44 @@ begin
       begin
            force64 := true;
            warnOnlyWindows := true;
-      end;
-
-      If (lowercase(Parameter_SysNative) = lowercase(expr)) and Is64BitSystem then
+      end
+      else If (lowercase(Parameter_SysNative) = lowercase(expr)) and Is64BitSystem then
       begin
         force64 := true;
         warnOnlyWindows := true;
-      end;
-
-      If lowercase(Parameter_32Bit) = lowercase(expr) then
+      end
+      else If lowercase(Parameter_32Bit) = lowercase(expr) then
       begin
         force64 := false;
         warnOnlyWindows := true;
-      end;
-
-      If lowercase('/showoutput') = lowercase(expr) then
+      end
+      else If lowercase('/showoutput') = lowercase(expr) then
       begin
            showoutput := true;
            LogDatei.log('Set Showoutput true', LLDebug);
+      end
+      else if RunAsForParameter(expr, runAs) then
+         warnOnlyWindows := true
+      else
+      begin
+        SyntaxCheck := false;
+        InfoSyntaxError := expr + ' is not a legal '
+          + PStatNames[Sektion.SectionKind] + ' parameter';
       end;
-
-      if RunAsForParameter(expr, runAs) then
-         warnOnlyWindows := true;
 
       {$IFNDEF WIN32}
       if warnOnlyWindows then
-         LogDatei.log('Warning: ' + expr + ' is only supported on Windows!', LLWarning);
+      begin
+         SyntaxCheck := false;
+         InfoSyntaxError := expr + ' is only supported on Windows';
+      end;
       {$ENDIF WIN32}
-      warnOnlyWindows := false;
+    end;
+
+    if not SyntaxCheck then
+    begin
+      Result := reportError (Sektion, i, 'Expressionstr', InfoSyntaxError);
+      exit;
     end;
 
     {$IFDEF WIN32}
@@ -10241,6 +10254,7 @@ Var
  SyntaxCheck : Boolean;
  InfoSyntaxError : String='';
  warnOnlyWindows : Boolean;
+ calledName : String='';
 begin
   runAs := traInvoker;
   {$IFDEF WIN32}
@@ -10388,16 +10402,22 @@ begin
    else
    Begin
      SyntaxCheck := false;
-     InfoSyntaxError := expr + ' not legal WinBatch parameter';
+     if Sektion.name = 'processCall' then
+       calledName := 'processCall'
+     else
+       calledName := PStatNames[Sektion.SectionKind];
+
+     InfoSyntaxError := expr + ' is not a legal '
+       + calledName + ' parameter';
    End;
 
    {$IFNDEF WIN32}
    if warnOnlyWindows then
    Begin
-     Logdatei.log('Warning: ' + expr + ' is only supported on Windows!', LLWarning);
+     SyntaxCheck := false;
+     InfoSyntaxError := expr + ' is only supported on Windows';
    End;
    {$ENDIF WIN32}
-   warnOnlyWindows := false;
 
    GetWord (Remaining, expr, Remaining, WordDelimiterSet0);
    end;
@@ -14662,6 +14682,7 @@ begin
        syntaxCheck := true;
        StringResult := '';
        ArbeitsSektion := TWorkSection.create(0,Nil);
+       ArbeitsSektion.name := 'processCall';
        ArbeitsSektion.Text:= s1;
        LogDatei.log ('Executing: ' + s +'('+ s1+') '+tmpstr, LLNotice);
        ActionResult := execWinBatchParseParams(ArbeitsSektion, r);
