@@ -2404,7 +2404,7 @@ begin
             ProcessMess;
             sleep(1000);
             {$IFDEF UNIX}
-            lpExitCode := FpcProcess.ExitStatus
+            lpExitCode := FpcProcess.ExitStatus;
             {$ENDIF UNIX}
             {$IFDEF WINDOWS}
             GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode);
