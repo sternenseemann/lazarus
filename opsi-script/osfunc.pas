@@ -57,6 +57,7 @@ uses
   Shlobj,
 {$ENDIF}
 {$IFDEF GUI}
+  graphics,
   LResources,
   LCLIntf,
   LCLProc,
@@ -467,7 +468,7 @@ function StartProcess(CmdLinePasStr: string; ShowWindowFlag: integer;
   var Report: string; var ExitCode: longint): boolean; overload;
 
 function StartProcess(CmdLinePasStr: string; ShowWindowFlag: integer;
-  WaitForReturn: boolean; WaitForWindowVanished: boolean;
+  showoutput: boolean; WaitForReturn: boolean; WaitForWindowVanished: boolean;
   WaitForWindowAppearing: boolean; WaitForProcessEnding: boolean;
   waitsecsAsTimeout: boolean; RunAs: TRunas; Ident: string; WaitSecs: word;
   var Report: string; var ExitCode: longint; var output: TXStringList): boolean; overload;
@@ -685,6 +686,7 @@ uses
   {$IFDEF GUI}
   osbatchgui,
   osinteractivegui,
+  osshowsysinfo,
   {$ENDIF GUI}
   osmain,
   osdefinedfunctions,
@@ -2128,7 +2130,7 @@ end;
 {$ENDIF WINDOWS}
 
 function StartProcess_cp(CmdLinePasStr: string; ShowWindowFlag: integer;
-  WaitForReturn: boolean; WaitForWindowVanished: boolean;
+  showoutput: boolean; WaitForReturn: boolean; WaitForWindowVanished: boolean;
   WaitForWindowAppearing: boolean; WaitForProcessEnding: boolean;
   waitsecsAsTimeout: boolean; Ident: string; WaitSecs: word;
   var Report: string; var ExitCode: longint; var output: TXStringList): boolean;
@@ -2160,7 +2162,7 @@ var
   i: integer;
 
   function ReadStream(var Buffer: string; var proc: TProcess;
-    var output: TXStringList): LongInt;
+    var output: TXStringList; showoutput: boolean): LongInt;
   var
     tmp_buffer: Array[0..READ_BYTES] of char;
     output_line: string='';
@@ -2183,6 +2185,13 @@ var
       output_line := WINCPToUTF8(output_line);
       {$ENDIF WINDOWS}
       output.Add(output_line);
+      {$IFDEF GUI}
+      if showoutput then
+      begin
+        SystemInfo.Memo1.Lines.Add(output_line);
+        ProcessMess;
+      end;
+      {$ENDIF GUI}
 
       // skip carriage return if present
       if (length(Buffer) > LineBreakPos) and (Buffer[LineBreakPos + 1] = #10) then
@@ -2301,7 +2310,7 @@ begin
           nowtime := now;
           running := False;
 
-          ReadStream(Buffer, FPCProcess, output);
+          ReadStream(Buffer, FPCProcess, output, showoutput);
 
           {$IFDEF WINDOWS}
           if WaitForWindowAppearing then
@@ -2459,7 +2468,7 @@ begin
 
         // read remaining output
         repeat
-          n := ReadStream(Buffer, FPCProcess, output);
+          n := ReadStream(Buffer, FPCProcess, output, showoutput);
         until n <= 0;
 
         ProcessMess;
@@ -2487,7 +2496,7 @@ end;
 
 {$IFDEF WIN32}
 function ReadPipe(var Buffer: string; var hReadPipe: THandle; var BytesRead: LongWord;
-  var output: TXStringList): boolean;
+  var output: TXStringList; showoutput: boolean): boolean;
 var
   output_line: string = '';
   lpBuffer: Array[0..READ_BYTES] of char;
@@ -2508,7 +2517,15 @@ begin
     while not (LineBreakPos = 0) do
     begin
       output_line := Copy(Buffer, 1, LineBreakPos - 1);
-      output.Add(WinCPToUTF8(output_line));
+      output_line := WinCPToUTF8(output_line);
+      output.Add(output_line);
+      {$IFDEF GUI}
+      if showoutput then
+      begin
+        SystemInfo.Memo1.Lines.Add(output_line);
+        ProcessMess;
+      end;
+      {$ENDIF GUI}
 
       // skip carriage return if present
       if (length(Buffer) > LineBreakPos) and (Buffer[LineBreakPos + 1] = #10) then
@@ -2522,7 +2539,7 @@ begin
 end;
 
 function StartProcess_cp_lu(CmdLinePasStr: string; ShowWindowFlag: integer;
-  WaitForReturn: boolean; WaitForWindowVanished: boolean;
+  showoutput: boolean; WaitForReturn: boolean; WaitForWindowVanished: boolean;
   WaitForWindowAppearing: boolean; WaitForProcessEnding: boolean;
   waitsecsAsTimeout: boolean; Ident: string; WaitSecs: word;
   var Report: string; var ExitCode: longint; var output: TXStringList): boolean;
@@ -2732,7 +2749,7 @@ begin
 
             running := False;
 
-            if not (ReadPipe(Buffer, hReadPipe, BytesRead, output)) then
+            if not (ReadPipe(Buffer, hReadPipe, BytesRead, output, showoutput)) then
               LogDatei.log('Read Error: ' + SysErrorMessage(getLastError()), LLError);
 
             //wait for task vanished
@@ -2894,7 +2911,7 @@ begin
           ProcessMess;
 
           repeat
-            readResult := ReadPipe(Buffer, hReadPipe, BytesRead, output);
+            readResult := ReadPipe(Buffer, hReadPipe, BytesRead, output, showoutput);
             if not readResult then
               LogDatei.log('Read Error: ' + SysErrorMessage(getLastError()), LLError);
           until (BytesRead <= 0) or (not readResult);
@@ -2942,7 +2959,7 @@ end;
 
 
 function StartProcess_cp_el(CmdLinePasStr: string; ShowWindowFlag: integer;
-  WaitForReturn: boolean; WaitForWindowVanished: boolean;
+  showoutput: boolean; WaitForReturn: boolean; WaitForWindowVanished: boolean;
   WaitForWindowAppearing: boolean; WaitForProcessEnding: boolean;
   waitsecsAsTimeout: boolean; Ident: string; WaitSecs: word;
   var Report: string; var ExitCode: longint; var output: TXStringList): boolean;
@@ -3130,7 +3147,7 @@ begin
 
             running := False;
 
-            if not (ReadPipe(Buffer, hReadPipe, BytesRead, output)) then
+            if not (ReadPipe(Buffer, hReadPipe, BytesRead, output, showoutput)) then
               LogDatei.log('Read Error: ' + SysErrorMessage(getLastError()), LLError);
 
             //wait for task vanished
@@ -3292,7 +3309,7 @@ begin
           ProcessMess;
 
           repeat
-            readResult := ReadPipe(Buffer, hReadPipe, BytesRead, output);
+            readResult := ReadPipe(Buffer, hReadPipe, BytesRead, output, showoutput);
             if not readResult then
               LogDatei.log('Read Error: ' + SysErrorMessage(getLastError()), LLError);
           until (BytesRead <= 0) or (not readResult);
@@ -3326,7 +3343,7 @@ end;
 
 
 function StartProcess_as(CmdLinePasStr: string; ShowWindowFlag: integer;
-  WaitForReturn: boolean; WaitForWindowVanished: boolean;
+  showoutput: boolean; WaitForReturn: boolean; WaitForWindowVanished: boolean;
   WaitForWindowAppearing: boolean; WaitForProcessEnding: boolean;
   waitsecsAsTimeout: boolean; Ident: string; WaitSecs: word;
   var Report: string; var ExitCode: longint; var output: TXStringList): boolean;
@@ -3661,7 +3678,7 @@ begin
 
             running := False;
 
-            if not (ReadPipe(Buffer, hReadPipe, BytesRead, output)) then
+            if not (ReadPipe(Buffer, hReadPipe, BytesRead, output, showoutput)) then
               LogDatei.log('Read Error: ' + SysErrorMessage(getLastError()), LLError);
 
             (* wait for task vanished *)
@@ -3829,7 +3846,7 @@ begin
           ProcessMess;
 
           repeat
-            readResult := ReadPipe(Buffer, hReadPipe, BytesRead, output);
+            readResult := ReadPipe(Buffer, hReadPipe, BytesRead, output, showoutput);
             if not readResult then
               LogDatei.log('Read Error: ' + SysErrorMessage(getLastError()), LLError);
           until (BytesRead <= 0) or (not readResult);
@@ -3879,7 +3896,7 @@ begin
   runAs := traInvoker;
   output := TXStringList.create;
 
-  Result := StartProcess(CmdLinePasStr, ShowWindowFlag, WaitForReturn,
+  Result := StartProcess(CmdLinePasStr, ShowWindowFlag, false, WaitForReturn,
     WaitForWindowVanished, WaitForWindowAppearing, WaitForProcessEnding,
     runas, Ident, WaitSecs, Report, ExitCode);
 
@@ -3898,7 +3915,7 @@ begin
   // provide a temp stringlist
   output := TXStringList.create;
 
-  Result := StartProcess(CmdLinePasStr, ShowWindowFlag, WaitForReturn,
+  Result := StartProcess(CmdLinePasStr, ShowWindowFlag, false, WaitForReturn,
     WaitForWindowVanished, WaitForWindowAppearing, WaitForProcessEnding,
     False, runAs, Ident, WaitSecs, Report, ExitCode, output);
 
@@ -3916,7 +3933,7 @@ begin
   // compatibility with old version that had no output capturing
   output := TXStringList.create;
 
-  Result := StartProcess(CmdLinePasStr, ShowWindowFlag, WaitForReturn, WaitForWindowVanished,
+  Result := StartProcess(CmdLinePasStr, ShowWindowFlag, false, WaitForReturn, WaitForWindowVanished,
     WaitForWindowAppearing, WaitForProcessEnding, waitsecsAsTimeout, RunAs, Ident,
     WaitSecs, Report, Exitcode, output);
 
@@ -3924,7 +3941,7 @@ begin
 end;
 
 function StartProcess(CmdLinePasStr: string; ShowWindowFlag: integer;
-  WaitForReturn: boolean; WaitForWindowVanished: boolean;
+  showoutput: boolean; WaitForReturn: boolean; WaitForWindowVanished: boolean;
   WaitForWindowAppearing: boolean; WaitForProcessEnding: boolean;
   waitsecsAsTimeout: boolean; RunAs: TRunAs; Ident: string; WaitSecs: word;
   var Report: string; var ExitCode: longint; var output : TXStringList): boolean;
@@ -3999,13 +4016,31 @@ begin
       filename := CmdLinePasStr;
     end;
   end;
+
+  {$IFDEF GUI}
+  if showoutput then
+  begin
+    FBatchOberflaeche.Left:= 5;
+    FBatchOberflaeche.Top:= 5;
+    CreateSystemInfo;
+    SystemInfo.Memo1.Color:= clBlack;
+    SystemInfo.Memo1.Font.Color := clWhite;
+    SystemInfo.Memo1.Lines.clear;
+    systeminfo.BitBtn1.Enabled:= false;
+    systeminfo.Label1.Caption:='Executing: '+CmdLinePasStr;
+    systeminfo.ShowOnTop;
+    ProcessMess;
+    LogDatei.log('Start Showoutput', LLInfo);
+  end;
+  {$ENDIF GUI}
+
   {$IFDEF UNIX}
   // we start as Invoker
   // we assume that this is a executable
   // we try it via createprocess (Tprocess)
   LogDatei.DependentAdd(
     'Start process as invoker: ' + getCommandResult('/bin/bash -c whoami'), LLInfo);
-  Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag, WaitForReturn,
+  Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag, showoutput, WaitForReturn,
     WaitForWindowVanished, WaitForWindowAppearing, WaitForProcessEnding,
     waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode, output);
   {$ENDIF LINUX}
@@ -4017,7 +4052,7 @@ begin
     // we assume that this is a call of a not executable file
     // this is deprecated so we warn and still try it via shellexecute
     logdatei.DependentAdd('winbatch call of not executable file: ' +
-      filename + ' is deprecated', LLWarning);
+      filename + ' is deprecated and output capturing not supported', LLWarning);
     Result := StartProcess_se(CmdLinePasStr, ShowWindowFlag,
       WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
       WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode);
@@ -4044,7 +4079,7 @@ begin
       // we try it via createprocess (Tprocess)
       LogDatei.DependentAdd(
         'Start process as invoker: ' + DSiGetUserName, LLInfo);
-      Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag,
+      Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag, showoutput,
         WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
         WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode, output);
     end
@@ -4077,7 +4112,7 @@ begin
         LogDatei.DependentAdd(
           'Start process as LoggedOnUser: ' + usercontextDomain +
           '\' + usercontextUser, LLInfo);
-        Result := StartProcess_cp_lu(CmdLinePasStr, ShowWindowFlag,
+        Result := StartProcess_cp_lu(CmdLinePasStr, ShowWindowFlag, showoutput,
           WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
           WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode, output);
         if not Result then
@@ -4096,7 +4131,7 @@ begin
       // we assume that this is a executable
       // we try it via createprocess (Tprocess)
       LogDatei.log('Start process elevated ....', LLInfo);
-      Result := StartProcess_cp_el(CmdLinePasStr, ShowWindowFlag,
+      Result := StartProcess_cp_el(CmdLinePasStr, ShowWindowFlag, showoutput,
         WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
         WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode, output);
 
@@ -4107,7 +4142,7 @@ begin
       if opsiSetupAdmin_created then
       begin
         //it is still created
-        Result := StartProcess_as(CmdLinePasStr, ShowWindowFlag,
+        Result := StartProcess_as(CmdLinePasStr, ShowWindowFlag, showoutput,
           WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
           WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs, Report, ExitCode, output);
         dwThreadId := GetCurrentThreadId;
@@ -4137,14 +4172,14 @@ begin
           begin
             Logdatei.DependentAdd('Could not create Temporary Admin ', LLError);
             Logdatei.DependentAdd('Try to run without temporary Admin ', LLWarning);
-            Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag,
+            Result := StartProcess_cp(CmdLinePasStr, ShowWindowFlag, showoutput,
               WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
               WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs,
               Report, ExitCode, output);
           end
           else
           begin
-            Result := StartProcess_as(CmdLinePasStr, ShowWindowFlag,
+            Result := StartProcess_as(CmdLinePasStr, ShowWindowFlag, showoutput,
               WaitForReturn, WaitForWindowVanished, WaitForWindowAppearing,
               WaitForProcessEnding, waitsecsAsTimeout, Ident, WaitSecs,
               Report, ExitCode, output);
@@ -4168,6 +4203,17 @@ begin
     end;
   end;
   {$ENDIF WIN32}
+
+  {$IFDEF GUI}
+  if showoutput then
+  begin
+    SystemInfo.free; SystemInfo := nil;
+    FBatchOberflaeche.BringToFront;
+    FBatchOberflaeche.centerWindow;
+    ProcessMess;
+    LogDatei.log('Stop Showoutput', LLInfo);
+  end;
+  {$ENDIF GUI}
 end;
 
 

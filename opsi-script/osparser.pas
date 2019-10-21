@@ -520,7 +520,7 @@ public
                               SaveddeWithProgman : Boolean)      : TSectionResult;
   function execWinBatch (const Sektion: TWorkSection; WinBatchParameter : String;
                  WaitConditions : TSetWaitConditions; ident : String; WaitSecs : Word;
-                 runAs : TRunAs;flag_force64:boolean) : TSectionResult;
+                 runAs : TRunAs;flag_force64:boolean; showoutput: boolean) : TSectionResult;
   function execWinBatchParseParams(const Sektion: TWorkSection; var Remaining : String) : TSectionResult;
   function execDOSBatch (const Sektion: TWorkSection; BatchParameter : String;
                  ShowCmd : Integer; catchOut: Boolean; logleveloffset : integer;
@@ -623,6 +623,7 @@ const
    ParameterRunElevated             = '/RunElevated';
    ParameterRunAsLoggedOnUser       = '/RunAsLoggedOnUser';
    ParameterShowWindowHide          = '/WindowHide';
+   ParameterShowoutput              = '/showoutput';
 
 
   DefaultWaitProcessTimeoutSecs = 1200; //20 min
@@ -9461,7 +9462,8 @@ function TuibInstScript.execWinBatch (const Sektion: TWorkSection; WinBatchParam
                                      ident : String;
                                      WaitSecs : Word;
                                      runAs : TRunAs;
-                                     flag_force64:boolean)
+                                     flag_force64:boolean;
+                                     showoutput:boolean)
                      : TSectionResult;
 
 Var
@@ -9566,7 +9568,7 @@ begin
         then
         Begin
           LogDatei.log ('   Waiting until window "' + ident + '" has vanished' , LevelComplete);
-          if not StartProcess (Commandline, sw_hide, true, true, false, false, waitsecsAsTimeout, runAs, ident, WaitSecs, Report, FLastExitCodeOfExe, output)
+          if not StartProcess (Commandline, sw_hide, showoutput, true, true, false, false, waitsecsAsTimeout, runAs, ident, WaitSecs, Report, FLastExitCodeOfExe, output)
 
           then
           Begin
@@ -9581,7 +9583,7 @@ begin
         Begin
           LogDatei.log ('   Waiting until window "' + ident + '" is coming up' , LevelComplete);
 
-          if not StartProcess (Commandline, sw_hide, true, false, true, false, waitsecsAsTimeout, runAs, ident, WaitSecs, Report, FLastExitCodeOfExe, output)
+          if not StartProcess (Commandline, sw_hide, showoutput, true, false, true, false, waitsecsAsTimeout, runAs, ident, WaitSecs, Report, FLastExitCodeOfExe, output)
           then
           Begin
             ps := 'Error: ' + Report;
@@ -9595,7 +9597,7 @@ begin
         Begin
           LogDatei.log ('   Waiting until process "' + ident + '" started and has ended' , LevelComplete);
 
-          if not StartProcess (Commandline, sw_hide, true, false, false, true, waitsecsAsTimeout, runAs, ident, WaitSecs, Report, FLastExitCodeOfExe, output)
+          if not StartProcess (Commandline, sw_hide, showoutput, true, false, false, true, waitsecsAsTimeout, runAs, ident, WaitSecs, Report, FLastExitCodeOfExe, output)
           then
           Begin
             ps := 'Error: ' + Report;
@@ -9634,7 +9636,7 @@ from defines.inc
    SW_SHOWNORMAL = 1;
 *)
 
-          if not StartProcess (Commandline, sw_hide, WaitForReturn, false, false, false, waitsecsAsTimeout, runAs, '', WaitSecs, Report, FLastExitCodeOfExe, output)
+          if not StartProcess (Commandline, sw_hide, showoutput, WaitForReturn, false, false, false, waitsecsAsTimeout, runAs, '', WaitSecs, Report, FLastExitCodeOfExe, output)
           then
           Begin
               ps := 'Error: ' + Report;
@@ -10052,7 +10054,7 @@ begin
         force64 := false;
         warnOnlyWindows := true;
       end
-      else If lowercase('/showoutput') = lowercase(expr) then
+      else If lowercase(ParameterShowoutput) = lowercase(expr) then
       begin
            showoutput := true;
            LogDatei.log('Set Showoutput true', LLDebug);
@@ -10273,8 +10275,10 @@ Var
  InfoSyntaxError : String='';
  warnOnlyWindows : Boolean;
  calledName : String='';
+ showoutput: boolean;
 begin
   runAs := traInvoker;
+  showoutput := false;
   {$IFDEF WIN32}
   opsiSetupAdmin_runElevated := false;
   {$ENDIF WIN32}
@@ -10314,6 +10318,11 @@ begin
      flag_force64 := false;
      warnOnlyWindows := true;
    End
+   else if LowerCase (expr) = LowerCase (ParameterShowoutput)
+   then
+   begin
+     showoutput := true;
+   end
    else if LowerCase (expr) = LowerCase (ParameterWaitSecs)
    then
    Begin
@@ -10441,7 +10450,7 @@ begin
    end;
 
    if SyntaxCheck then
-     Result := execWinBatch (Sektion, Remaining, WaitConditions, Ident, WaitSecs, runAs,flag_force64)
+     Result := execWinBatch (Sektion, Remaining, WaitConditions, Ident, WaitSecs, runAs,flag_force64, showoutput)
    else
      Result := reportError (Sektion, i, 'Expressionstr', InfoSyntaxError)
 end;
