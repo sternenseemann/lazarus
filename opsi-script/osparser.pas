@@ -10185,10 +10185,14 @@ begin
      begin
       output := TXStringlist.create;
       LogDatei.log ('Executing ' + commandline, LLDebug+logleveloffset);
-      if not RunCommandAndCaptureOut
+      if not StartProcess
          (commandline,
-          catchout,
-          output, report, showcmd, FLastExitCodeOfExe,showoutput)
+          showcmd,
+          showoutput,
+          true, false, false, false, false,
+          runAs,
+          '', 0,
+          report, FLastExitCodeOfExe, output)
       then
       Begin
         // is failed
@@ -10200,10 +10204,14 @@ begin
           LogDatei.log(ps, LLError);
           ProcessMess;
           Sleep(100);
-          if not RunCommandAndCaptureOut
+          if not StartProcess
              (commandline,
-              catchout,
-              output, report, showcmd, FLastExitCodeOfExe,showoutput)
+              showcmd,
+              showoutput,
+              true, false, false, false, false,
+              runAs,
+              '', 0,
+              report, FLastExitCodeOfExe, output)
           then
           Begin
             LogDatei.log(ps, LLcritical);
