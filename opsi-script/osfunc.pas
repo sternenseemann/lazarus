@@ -4030,6 +4030,9 @@ begin
   end;
 
   {$IFDEF GUI}
+  if not WaitForReturn then
+    showoutput := false;
+
   if showoutput then
   begin
     FBatchOberflaeche.Left:= 5;
