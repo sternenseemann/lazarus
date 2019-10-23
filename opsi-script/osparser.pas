@@ -520,8 +520,10 @@ public
                               SaveddeWithProgman : Boolean)      : TSectionResult;
   function execWinBatch (const Sektion: TWorkSection; WinBatchParameter : String;
                  WaitConditions : TSetWaitConditions; ident : String; WaitSecs : Word;
-                 runAs : TRunAs;flag_force64:boolean; showoutput: boolean) : TSectionResult;
-  function execWinBatchParseParams(const Sektion: TWorkSection; var Remaining : String) : TSectionResult;
+                 runAs : TRunAs;flag_force64:boolean; showoutput: boolean;
+                 var output : TXStringList) : TSectionResult;
+  function execWinBatchParseParams(const Sektion: TWorkSection; var Remaining : String;
+                 var output : TXStringList) : TSectionResult;
   function execDOSBatch (const Sektion: TWorkSection; BatchParameter : String;
                  ShowCmd : Integer; catchOut: Boolean; logleveloffset : integer;
                  WaitConditions : TSetWaitConditions;
@@ -9463,7 +9465,8 @@ function TuibInstScript.execWinBatch (const Sektion: TWorkSection; WinBatchParam
                                      WaitSecs : Word;
                                      runAs : TRunAs;
                                      flag_force64:boolean;
-                                     showoutput:boolean)
+                                     showoutput:boolean;
+                                     var output: TXStringList)
                      : TSectionResult;
 
 Var
@@ -9478,7 +9481,6 @@ Var
  waitsecsAsTimeout : boolean = false;
  oldDisableWow64FsRedirectionStatus: pointer=nil;
  Wow64FsRedirectionDisabled, boolresult: boolean;
- output: TXStringList;
  outputStart: integer=0;
 begin
   try
@@ -9504,8 +9506,8 @@ begin
     if AutoActivityDisplay then FBatchOberflaeche.showAcitvityBar(true);
     {$ENDIF GUI}
 
-    output := TXStringList.create;
-    outputStart := 0;
+    // start displaying at next new line
+    outputStart := output.count;
 
     for i:= 1 to Sektion.count
     do
@@ -9668,7 +9670,6 @@ from defines.inc
       Wow64FsRedirectionDisabled := false;
     End;
     {$ENDIF WIN32}
-    output.free;
     finishSection (Sektion, OldNumberOfErrors, OldNumberOfWarnings,
                    DiffNumberOfErrors, DiffNumberOfWarnings);
 
@@ -10269,7 +10270,7 @@ begin
 end;
 
 function TuibInstScript.execWinBatchParseParams(const Sektion: TWorkSection;
-  var Remaining: String): TSectionResult;
+  var Remaining: String; var output: TXStringList): TSectionResult;
 Var
  runAs : TRunAs;
  WaitSecs : Word=0;
@@ -10458,7 +10459,7 @@ begin
    end;
 
    if SyntaxCheck then
-     Result := execWinBatch (Sektion, Remaining, WaitConditions, Ident, WaitSecs, runAs,flag_force64, showoutput)
+     Result := execWinBatch (Sektion, Remaining, WaitConditions, Ident, WaitSecs, runAs,flag_force64, showoutput, output)
    else
      Result := reportError (Sektion, i, 'Expressionstr', InfoSyntaxError)
 end;
@@ -11376,7 +11377,8 @@ begin
          in
          [tsDOSBatchFile, tsDOSInAnIcon,
          tsShellBatchFile, tsShellInAnIcon,
-         tsExecutePython, tsExecuteWith, tsExecuteWith_escapingStrings]
+         tsExecutePython, tsExecuteWith, tsExecuteWith_escapingStrings,
+         tsWinBatch]
          )
        then
          InfoSyntaxError := 'not implemented for this kind of section'
@@ -11417,6 +11419,9 @@ begin
                   execDOSBatch (localSection, r1,
                       SW_HIDE, true {catchout}, 1,
                       [ttpWaitOnTerminate], list);
+
+            tsWinBatch:
+                  execWinBatchParseParams(localSection, r1, list);
 
            end;
 
@@ -14716,12 +14721,14 @@ begin
      Begin
        syntaxCheck := true;
        StringResult := '';
+       list1 := TXStringList.create;
        ArbeitsSektion := TWorkSection.create(0,Nil);
        ArbeitsSektion.name := 'processCall';
        ArbeitsSektion.Text:= s1;
        LogDatei.log ('Executing: ' + s +'('+ s1+') '+tmpstr, LLNotice);
-       ActionResult := execWinBatchParseParams(ArbeitsSektion, r);
+       ActionResult := execWinBatchParseParams(ArbeitsSektion, r, list1);
        ArbeitsSektion.Free;
+       list1.free;
        StringResult := IntToStr (FLastExitCodeOfExe);
      end;
   end
@@ -22120,7 +22127,7 @@ begin
               tsWinBatch:
                begin
                  logdatei.log('Execution of: '+Sektion.Name+' '+ Remaining,LLNotice);
-                 ActionResult := execWinBatchParseParams(ArbeitsSektion, Remaining);
+                 ActionResult := execWinBatchParseParams(ArbeitsSektion, Remaining, output);
                end;
 
               {$IFDEF WIN32}
