@@ -2163,7 +2163,7 @@ var
   processID: DWord;
   parentProcessID: DWord;
   info: string;
-  lpExitCode: DWord;
+  lpExitCode: Int64;
   // tmp variables
   i: integer;
 
@@ -2182,7 +2182,11 @@ var
     {$ENDIF WINDOWS}
     Buffer := Buffer + tmp_buffer;
 
+    {$IFDEF WINDOWS}
     LineBreakPos := AnsiPos(#13, Buffer);
+    {$ELSE WINDOWS}
+    LineBreakPos := Pos(#10, Buffer);
+    {$ENDIF WINDOWS}
 
     while not (LineBreakPos = 0) do
     begin
@@ -2205,11 +2209,28 @@ var
 
       Buffer := Copy(Buffer, LineBreakPos + 1, READ_BYTES);
 
+      {$IFDEF WINDOWS}
       LineBreakPos := AnsiPos(#13, Buffer);
+      {$ELSE WINDOWS}
+      LineBreakPos := Pos(#10, Buffer);
+      {$ENDIF WINDOWS}
     end;
 
     Result := BytesRead;
   end;
+
+  {$IFDEF WINDOWS}
+  // this function is necessary since we have to use Int64 for
+  // exit codes to prevent problems with Integer conversion
+  // one Linux (due to TProcess.ExitCode)
+  function GetInt64ExitCode(handle: THandle; var lpExitCode: Int64) : boolean;
+  var
+    tmp: DWord;
+  begin
+    Result := GetExitCodeProcess(handle, tmp);
+    lpExitCode := tmp;
+  end;
+  {$ENDIF WINDOWS}
 
 const
   secsPerDay = 86400;
@@ -2389,8 +2410,8 @@ begin
               logdatei.DependentAdd('Process "' + ident + '" ended', LevelComplete);
               // After the process we waited for has ended, the Parent may be still alive
               // in this case we have to wait for the end of the parent
-              if GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode) and
-                (lpExitCode = still_active) then
+              if GetInt64ExitCode(FPCProcess.ProcessHandle, lpExitCode)
+                and (lpExitCode = still_active) then
               // for UNIX (commented out since inside IFDEF WINDOWS
               // if FpcProcess.Running then
               begin
@@ -2411,7 +2432,7 @@ begin
               end;
             end;
           end
-          else if GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode) and
+          else if GetInt64ExitCode(FpcProcess.ProcessHandle, lpExitCode) and
             (lpExitCode <> still_active) then
           {$ENDIF WINDOWS}
           {$IFDEF UNIX}
@@ -2456,7 +2477,7 @@ begin
             lpExitCode := FpcProcess.ExitStatus;
             {$ENDIF UNIX}
             {$IFDEF WINDOWS}
-            GetExitCodeProcess(FpcProcess.ProcessHandle, lpExitCode);
+            GetInt64ExitCode(FpcProcess.ProcessHandle, lpExitCode);
             {$ENDIF WINDOWS}
             {$IFDEF GUI}
             if waitsecsAsTimeout and (WaitSecs > 5) then
