@@ -2156,7 +2156,6 @@ var
   line: string;
   filename: string;
   ParamStr: string;
-  paramlist: TXStringlist;
   firstsplit: integer;
   // process info / settings
   ProcShowWindowFlag: TShowWindowOptions;
@@ -2237,7 +2236,6 @@ const
 
 begin
   ParamStr := '';
-  paramList := TXStringlist.create;
 
   // Quoted File Name?
   if CmdLinePasStr[1] = '"' then
@@ -2269,8 +2267,6 @@ begin
     end;
   end;
 
-  stringsplitByWhiteSpace(ParamStr, TStringList(paramlist));
-
   try
     try
     begin
@@ -2278,15 +2274,10 @@ begin
 
       FpcProcess := process.TProcess.Create(nil);
       {$IFDEF WINDOWS}
-      for i := 0 to (paramList.count - 1) do
-      begin
-        paramList[i] := utf8towincp(paramList[i]);
-      end;
-      FpcProcess.Executable := utf8towincp(filename);
+      FpcProcess.CommandLine := utf8towincp(CmdLinePasStr);
       {$ELSE WINDOWS}
-      FpcProcess.Executable := filename;
+      FpcProcess.CommandLine := CmdLinePasStr;
       {$ENDIF WINDOWS}
-      FpcProcess.Parameters := paramList;
       FpcProcess.StartupOptions := [suoUseShowWindow, suoUseSize, suoUsePosition];
       FpcProcess.Options := FpcProcess.Options + [poUsePipes, poStdErrToOutPut];
 
