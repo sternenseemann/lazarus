@@ -2275,10 +2275,12 @@ begin
       FpcProcess := process.TProcess.Create(nil);
       {$IFDEF WINDOWS}
       FpcProcess.CommandLine := utf8towincp(CmdLinePasStr);
+      // TProcess.ShowWindow could lead to crashes on Linux
+      FpcProcess.StartupOptions := [suoUseShowWindow, suoUseSize, suoUsePosition];
       {$ELSE WINDOWS}
       FpcProcess.CommandLine := CmdLinePasStr;
       {$ENDIF WINDOWS}
-      FpcProcess.StartupOptions := [suoUseShowWindow, suoUseSize, suoUsePosition];
+
       FpcProcess.Options := FpcProcess.Options + [poUsePipes, poStdErrToOutPut];
 
       case ShowWindowFlag of
