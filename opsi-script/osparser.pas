@@ -18731,7 +18731,10 @@ begin
    if runLoginScripts then
      runAs := traLoggedOnUser
    else
-     LogDatei.log('Warning: Not in UserLoginScript mode: /RunAsLoggedinUser ignored', LLWarning)
+   begin
+     LogDatei.log('Warning: Not in UserLoginScript mode: /RunAsLoggedinUser ignored', LLWarning);
+     runAs := traInvoker;
+   end;
   End
   else
     Result := false;
