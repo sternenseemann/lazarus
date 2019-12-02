@@ -10042,7 +10042,8 @@ begin
     begin
     {$IFDEF UNIX}
     fpchmod(tempfilename, &700);
-    {$ENDIF LINUX}
+    {$ENDIF UNIX}
+
     LogDatei.log('Content of saved file: '+tempfilename,LLDebug2);
     LogDatei.log('-----------------------',LLDebug2);
     for i := 0 to Sektion.Count-1 do
@@ -10090,7 +10091,18 @@ begin
            LogDatei.log('Set Showoutput true', LLDebug);
       end
       else if RunAsForParameter(expr, runAs) then
-         warnOnlyWindows := true
+      begin
+         warnOnlyWindows := true;
+
+         // for explanation see comment above SetFilePermissionForRunAs call
+         //if runas in [traAdmin, traAdminProfile, traAdminProfileExplorer,
+         //  traAdminProfileImpersonate, traAdminProfileImpersonateExplorer] then
+         //begin
+         //  SyntaxCheck := false;
+         //  InfoSyntaxError := '"' + expr + '" is not supported by '
+         //    + PStatNames[Sektion.SectionKind];
+         //end
+      end
       else
       begin
         SyntaxCheck := false;
@@ -10114,6 +10126,22 @@ begin
     end;
 
     {$IFDEF WIN32}
+    // make the user which will run the script the owner of it, if
+    // they have less privileges than SYSTEM
+    //
+    // For some strange reason this doesn't help for runas-Levels
+    // that require StartProcess_cp_as (/RunAsLoggedOnAdmin and
+    // /RunAsLoggedOnAdmin1 - /RunAsLoggedOnAdmin4). In those cases
+    // the launched process can't read files written by its parent
+    // process due to permission issues. It doesn't help making the
+    // executing user owner of said files. See also https://forum.opsi.org/viewtopic.php?f=7&t=11493.
+    //
+    // As a workaround we don't support /RunAsLoggedAdmin* for DosBatch and ExecWith
+    if not SetFilePermissionForRunAs(tempfilename, runas) then
+    begin
+      LogDatei.log('Warning: could not modify tmp file permissions. Trying to continue.' , LLWarning);
+    end;
+
     if force64 then
     begin
       if not FileExists(GetWinDirectory+'\cmd64.exe') then
@@ -10290,7 +10318,7 @@ begin
     {$IFDEF GUI}
     if SaveStayOnTop then FBatchOberflaeche.ForceStayOnTop (true);
     {$ENDIF GUI}
-    if Logdatei.UsedLogLevel < LLconfidential then deleteTempBatFiles(tempfilename);
+    //if Logdatei.UsedLogLevel < LLconfidential then deleteTempBatFiles(tempfilename);
   finally
     {$IFDEF GUI}
     FBatchOberflaeche.showAcitvityBar(false);
@@ -10931,7 +10959,16 @@ begin
          else if lowercase(ParameterShowoutput) = lowercase(expr) then
            showoutput := tsofShowOutput
          else if RunAsForParameter(expr, runas) then
-           onlyWindows := true
+         begin
+           onlyWindows := true;
+           // for explanation see comment above SetFilePermissionForRunAs in execDosBatch
+           if runas in [traAdmin, traAdminProfile, traAdminProfileExplorer,
+             traAdminProfileImpersonate, traAdminProfileImpersonateExplorer] then
+           begin
+             SyntaxCheck := false;
+             errorInfo := '"' + expr + '" is not supported by ExecWith';
+           end
+         end
          else
          begin
            SyntaxCheck := false;
@@ -10941,10 +10978,8 @@ begin
          {$IFNDEF WINDOWS}
          if onlyWindows then
          begin
-           // Don't generate a syntax error to keep in line with old behavior
-           SyntaxCheck := true;
+           SyntaxCheck := false;
            errorInfo := '"' + expr + '" is only supported on Windows!';
-           LogDatei.log('Warning: ' + errorInfo, LLWarning);
          end;
          {$ENDIF WINDOWS}
       end;
@@ -10957,6 +10992,10 @@ begin
       end;
 
       {$IFDEF WIN32}
+      // for explanation see comment above SetFilePermissionForRunAs in execDosBatch
+      if not SetFilePermissionForRunAs(tempfilename, runas) then
+        LogDatei.log('Warning: could not modify tmp file permissions. Trying to continue', LLWarning);
+
       Wow64FsRedirectionDisabled := false;
       if force64 then
       Begin
@@ -11018,7 +11057,7 @@ begin
 
     if ExitOnError and (DiffNumberOfErrors > 0)
     then result := tsrExitProcess;
-    if Logdatei.UsedLogLevel < LLconfidential then
+   if Logdatei.UsedLogLevel < LLconfidential then
       if not threaded then deleteTempBatFiles(tempfilename);
   finally
     {$IFDEF GUI}

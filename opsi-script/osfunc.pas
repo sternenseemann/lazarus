@@ -25,10 +25,13 @@ interface
 
 uses
 {$IFDEF WINDOWS}
-  //jwawinnt,
   JwaWinType,
   jwatlhelp32,
   jwawinbase,
+  JwaSddl,
+  JwaWinNT,
+  jwaAclApi,
+  JwaAccCtrl,
   JwaProfInfo,
   JwaUserEnv,
   //JclMiscel,
@@ -450,6 +453,10 @@ function GetNetDrive(const pathname: string): string;
 {$IFNDEF WIN64}
 function KillTask(ExeFileName: string; var info: string): boolean;
 {$ENDIF WIN64}
+
+{$IFDEF WINDOWS}
+function SetFilePermissionForRunAs(filename: string; runas: TRunAs): boolean;
+{$ENDIF WINDOWS}
 
 function StartProcess(CmdLinePasStr: string; ShowWindowFlag: integer;
   WaitForReturn: boolean; WaitForWindowVanished: boolean;
@@ -1402,8 +1409,234 @@ end;
 
 {$ENDIF WINDOWS}
 
+{$IFDEF WINDOWS}
+function SetFilePermissionForRunAs(filename: string; runas: TRunAs): boolean;
+var
+  sid: JwaWinNT.PSID;
+  groupSid: JwaWinNT.PSID;
+  sidSize: DWORD;
+  nameUse: JwaWinNT.SID_NAME_USE;
+  refDomain: LpStr;
+  refDomainSize: DWORD;
+  dolocalfree: boolean;
+  procToken: HANDLE;
+  changedSecurityInfo: DWORD;
+  acl: jwawinnt.PACL;
 
+  type
+    TRUSTEE_FIX = packed record
+      pMultipleTrustee: Pointer;
+      MultipleTrusteeOperation: DWORD;
+      TrusteeForm: DWORD;
+      TrusteeType: DWORD;
+      ptstrName: LPSTR;
+    end;
 
+    EXPLICIT_ACCESS_FIX = packed record
+      grfAccessPermissions: DWORD;
+      grfAccessMode: DWORD;
+      grfInheritance: DWORD;
+      Trustee: TRUSTEE_FIX;
+    end;
+
+  function SetPrivilege(token: HANDLE; privilege: PChar; state: boolean): boolean;
+  var
+    luid: jwawintype._LUID;
+    tp: jwawinnt.TOKEN_PRIVILEGES;
+  begin
+    if not jwawinbase.LookupPrivilegeValue(nil, privilege, luid) then
+      Result := false
+    else
+    begin
+      FillChar(tp, sizeOf(tp), #0);
+      tp.privilegeCount := 1;
+      tp.Privileges[0].Luid := luid;
+      if state then
+        tp.Privileges[0].Attributes := SE_PRIVILEGE_ENABLED
+      else
+        tp.Privileges[0].Attributes := SE_PRIVILEGE_REMOVED;
+
+        Result := AdjustTokenPrivileges(token, LongBool(false), @tp, sizeOf(tp), nil,nil);
+    end
+  end;
+
+  function SetupAccess(owner: jwawinnt.PSID; var acl: jwawinnt.PACL): bool;
+  const
+    EA_COUNT = 3;
+  var
+    sidAuthWorld: jwawinnt.SID_IDENTIFIER_AUTHORITY;
+    sidAuthNT: jwawinnt.SID_IDENTIFIER_AUTHORITY;
+    everyoneSID: jwawinnt.PSID;
+    adminSID: jwawinnt.PSID;
+    ea: Array[0..(EA_COUNT-1)] of EXPLICIT_ACCESS_FIX;
+    status: jwawintype.DWORD;
+  begin
+    try
+      begin
+        sidAuthWorld := jwawinnt.SECURITY_WORLD_SID_AUTHORITY;
+        sidAuthNT := jwawinnt.SECURITY_NT_AUTHORITY;
+
+        if not (jwawinbase.AllocateAndInitializeSid(@sidAuthWorld, 1, jwawinnt.SECURITY_WORLD_RID,
+            0, 0, 0, 0, 0, 0, 0, everyoneSID)
+          and jwawinbase.AllocateAndInitializeSid(@sidAuthNT, 2, jwawinnt.SECURITY_BUILTIN_DOMAIN_RID,
+          jwawinnt.DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, adminSID)) then
+        begin
+          WriteLn('Could not allocate SIDs: ' + IntToStr(getLastError()));
+          Result := false;
+        end
+        else
+        begin
+          jwawinbase.ZeroMemory(@ea, EA_COUNT * sizeOf(EXPLICIT_ACCESS_FIX));
+
+          ea[0].grfAccessPermissions := GENERIC_ALL;
+          ea[0].grfAccessMode := DWORD(DENY_ACCESS);
+          ea[0].grfInheritance := NO_INHERITANCE;
+          ea[0].Trustee.MultipleTrusteeOperation := DWORD(NO_MULTIPLE_TRUSTEE);
+          ea[0].Trustee.pMultipleTrustee := nil;
+          ea[0].Trustee.TrusteeForm := DWORD(TRUSTEE_IS_SID);
+          ea[0].Trustee.TrusteeType := DWORD(TRUSTEE_IS_WELL_KNOWN_GROUP);
+          ea[0].Trustee.ptstrName := pointer(everyoneSID);
+
+          ea[1].grfAccessPermissions := GENERIC_ALL;
+          ea[1].grfAccessMode := DWORD(SET_ACCESS);
+          ea[1].grfInheritance := NO_INHERITANCE;
+          ea[1].Trustee.MultipleTrusteeOperation := DWORD(NO_MULTIPLE_TRUSTEE);
+          ea[1].Trustee.pMultipleTrustee := nil;
+          ea[1].Trustee.TrusteeForm := DWORD(TRUSTEE_IS_SID);
+          ea[1].Trustee.TrusteeType := DWORD(TRUSTEE_IS_GROUP);
+          ea[1].Trustee.ptstrName := pointer(adminSID);
+
+          ea[2].grfAccessPermissions := GENERIC_ALL;
+          ea[2].grfAccessMode := DWORD(SET_ACCESS);
+          ea[2].grfInheritance := NO_INHERITANCE;
+          ea[2].Trustee.MultipleTrusteeOperation := DWORD(NO_MULTIPLE_TRUSTEE);
+          ea[2].Trustee.pMultipleTrustee := nil;
+          ea[2].Trustee.TrusteeForm := DWORD(TRUSTEE_IS_SID);
+          ea[2].Trustee.TrusteeType := DWORD(TRUSTEE_IS_USER);
+          ea[2].Trustee.ptstrName := pointer(owner);
+
+          status := jwaaclapi.SetEntriesInAclA(EA_COUNT, @ea, nil, acl);
+          if status = ERROR_SUCCESS then
+            Result := true
+          else
+          begin
+            WriteLn('Error in SetEntriesInAcl: ' + IntToStr(status));
+            Result := false;
+          end;
+        end;
+      end
+    finally
+      If Assigned(everyoneSID) then
+        jwawinbase.FreeSID(everyoneSID);
+      If Assigned(adminSID) then
+        jwawinbase.FreeSID(adminSID);
+    end
+  end;
+begin
+  if runas = traInvoker then
+    Result := true
+  else
+    try
+      begin
+        sidSize := 0;
+        refDomainSize := 0;
+        doLocalFree := false;
+
+        procToken := INVALID_HANDLE_VALUE;
+
+        groupSid := nil;
+        sid := nil;
+        changedSecurityInfo := jwawinnt.OWNER_SECURITY_INFORMATION
+          or jwawinnt.DACL_SECURITY_INFORMATION;
+
+        if runas = traLoggedOnUser then
+        begin
+          // use usercontextSID variable to determine SID of logged on user
+          Result := jwasddl.ConvertStringSidToSidA(PChar(usercontextSID), sid);
+          dolocalfree := true;
+        end
+        else if runas = traPcpatch then
+        begin
+          // not really relevant, as it is never used in opsi script
+          jwawinbase.LookupAccountNameA(nil, 'pcpatch', nil,
+            sidSize, nil, refDomainSize, nameUse);
+
+          GetMem(sid, sidSize);
+          GetMem(refDomain, refDomainSize);
+
+          Result := jwawinbase.LookupAccountNameA(nil, 'pcpatch',
+            sid, sidSize, refDomain, refDomainSize, nameUse);
+        end
+        else if runas in [traAdmin, traAdminProfile, traAdminProfileExplorer,
+          traAdminProfileImpersonate, traAdminProfileImpersonateExplorer] then
+        begin
+          // to get the user's SID we need to create the local admin already here
+          Result := CreateTemporaryLocalAdmin(runas);
+
+          if Result then
+          begin
+            changedSecurityInfo := changedSecurityInfo or jwawinnt.GROUP_SECURITY_INFORMATION;
+
+            jwawinbase.LookupAccountNameA(nil, 'opsiSetupAdmin', nil, sidSize, nil, refDomainSize, nameUse);
+            GetMem(sid, sidSize);
+            GetMem(refDomain, refDomainSize);
+
+            Result := jwawinbase.LookupAccountNameA(nil, 'opsiSetupAdmin',
+              sid, sidSize, refDomain, refDomainSize, nameUse)
+              and jwasddl.ConvertStringSidToSidA(PChar(ADMIN_SIDSTRING), groupSid);
+          end
+        end
+        else
+          Result := false;
+
+        if Result then
+        begin
+          if not SetupAccess(sid, acl) then
+          begin
+            Result := false;
+          end
+          else if jwaaclapi.SetNamedSecurityInfoA(PChar(filename),
+            JwaAccCtrl.SE_FILE_OBJECT, changedSecurityInfo, sid, groupSid, acl, nil)
+            <> ERROR_SUCCESS then
+          begin
+            // if it fails we are probably missing the SE_RESTORE_NAME privilege, so we retry
+            if (not OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, procToken)) or
+               (not SetPrivilege(procToken, SE_RESTORE_NAME, true)) then
+              Result := false
+            else
+            begin
+              Result := jwaaclapi.SetNamedSecurityInfoA(PChar(filename),
+                JwaAccCtrl.SE_FILE_OBJECT, changedSecurityInfo, sid, groupSid, nil, nil)
+                = ERROR_SUCCESS;
+              if not Result then
+                LogDatei.log('Error while setting security info: ' + IntToStr(getLastError()), LLDebug);
+              SetPrivilege(procToken, SE_RESTORE_NAME, false);
+            end;
+          end;
+        end;
+      end
+    finally
+      begin
+        if Assigned(sid) then
+          if doLocalFree then
+            LocalFree(DWORD(sid))
+          else
+            FreeMem(sid, sidSize);
+
+        // note: groupSid always needs LocalFree currently
+        if Assigned(groupSid) then
+            LocalFree(DWORD(groupSid));
+
+        if Assigned(refDomain) then
+          FreeMem(refDomain, refDomainSize);
+
+        if Assigned(acl) then
+          LocalFree(DWORD(acl));
+      end;
+    end;
+end;
+
+{$ENDIF WINDOWS}
 
 {$IFDEF WINDOWS}
 function StartProcess_se(CmdLinePasStr: string; ShowWindowFlag: integer;
