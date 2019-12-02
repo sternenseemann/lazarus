@@ -10949,7 +10949,7 @@ begin
            force64 := true;
            onlyWindows := true;
          end
-         else If lowercase(Parameter_32bit) = lowercase(winstoption) then
+         else If lowercase(Parameter_32bit) = lowercase(expr) then
          begin
            force64 := false;
            onlyWindows := true;
