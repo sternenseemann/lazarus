@@ -9980,6 +9980,7 @@ Var
  remainingstr, evaluatedstr, newbatchparastr, errorstr : string;
  aktos : TuibOSVersion;
  warnOnlyWindows : Boolean;
+ sysError: DWORD;
  SyntaxCheck : Boolean;
  InfoSyntaxError : String='';
 
@@ -10095,13 +10096,13 @@ begin
          warnOnlyWindows := true;
 
          // for explanation see comment above SetFilePermissionForRunAs call
-         //if runas in [traAdmin, traAdminProfile, traAdminProfileExplorer,
-         //  traAdminProfileImpersonate, traAdminProfileImpersonateExplorer] then
-         //begin
-         //  SyntaxCheck := false;
-         //  InfoSyntaxError := '"' + expr + '" is not supported by '
-         //    + PStatNames[Sektion.SectionKind];
-         //end
+         if runas in [traAdmin, traAdminProfile, traAdminProfileExplorer,
+           traAdminProfileImpersonate, traAdminProfileImpersonateExplorer] then
+         begin
+           SyntaxCheck := false;
+           InfoSyntaxError := '"' + expr + '" is not supported by '
+             + PStatNames[Sektion.SectionKind];
+         end
       end
       else
       begin
@@ -10134,12 +10135,14 @@ begin
     // /RunAsLoggedOnAdmin1 - /RunAsLoggedOnAdmin4). In those cases
     // the launched process can't read files written by its parent
     // process due to permission issues. It doesn't help making the
-    // executing user owner of said files. See also https://forum.opsi.org/viewtopic.php?f=7&t=11493.
+    // executing user owner of said files.
     //
     // As a workaround we don't support /RunAsLoggedAdmin* for DosBatch and ExecWith
-    if not SetFilePermissionForRunAs(tempfilename, runas) then
+    sysError := NO_ERROR;
+    if not SetFilePermissionForRunAs(tempfilename, runas, sysError) then
     begin
-      LogDatei.log('Warning: could not modify tmp file permissions. Trying to continue.' , LLWarning);
+      LogDatei.log('Warning: could not modify tmp file permissions: '
+        + SysErrorMessage(sysError)+ ' (' + IntToStr(sysError) + ')' , LLWarning);
     end;
 
     if force64 then
@@ -10318,7 +10321,7 @@ begin
     {$IFDEF GUI}
     if SaveStayOnTop then FBatchOberflaeche.ForceStayOnTop (true);
     {$ENDIF GUI}
-    //if Logdatei.UsedLogLevel < LLconfidential then deleteTempBatFiles(tempfilename);
+    if Logdatei.UsedLogLevel < LLconfidential then deleteTempBatFiles(tempfilename);
   finally
     {$IFDEF GUI}
     FBatchOberflaeche.showAcitvityBar(false);
@@ -10838,6 +10841,7 @@ Var
  showoutput : TShowOutputFlag;
  oldDisableWow64FsRedirectionStatus: pointer=nil;
  Wow64FsRedirectionDisabled, boolresult: boolean;
+ sysError: DWORD;
 
 
 begin
@@ -10917,7 +10921,7 @@ begin
       LogDatei.log('Content of saved file: '+tempfilename,LLDebug2);
       LogDatei.log('-----------------------',LLDebug2);
       for i := 0 to Sektion.Count-1 do
-        LogDatei.log(Sektion.Strings[i],LLDebug);
+        LogDatei.log(Sektion.Strings[i],LLDebug2);
       LogDatei.log('-----------------------',LLDebug2);
       // if parameters end with '=' we concat tempfile without space
       if copy(programparas,length(programparas),1) = '=' then
@@ -10993,8 +10997,12 @@ begin
 
       {$IFDEF WIN32}
       // for explanation see comment above SetFilePermissionForRunAs in execDosBatch
-      if not SetFilePermissionForRunAs(tempfilename, runas) then
-        LogDatei.log('Warning: could not modify tmp file permissions. Trying to continue', LLWarning);
+      sysError := NO_ERROR;
+      if not SetFilePermissionForRunAs(tempfilename, runas, sysError) then
+      begin
+        LogDatei.log('Warning: could not modify tmp file permissions: '
+          + SysErrorMessage(sysError)+ ' (' + IntToStr(sysError) + ')' , LLWarning);
+      end;
 
       Wow64FsRedirectionDisabled := false;
       if force64 then
@@ -11057,7 +11065,7 @@ begin
 
     if ExitOnError and (DiffNumberOfErrors > 0)
     then result := tsrExitProcess;
-   if Logdatei.UsedLogLevel < LLconfidential then
+    if Logdatei.UsedLogLevel < LLconfidential then
       if not threaded then deleteTempBatFiles(tempfilename);
   finally
     {$IFDEF GUI}
